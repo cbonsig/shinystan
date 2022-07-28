@@ -916,3 +916,150 @@ setMethod(
     )
   }
 )
+    
+# as.shinystan (stansurv) -------------------------------------------------
+# test: duplicate stanreg and rename stansurv. does this work at all?
+setOldClass("stansurv")
+#' @describeIn as.shinystan Create a \code{shinystan} object from a
+#'   \code{stansurv} object (\pkg{\link[rstanarm]{rstanarm}}).
+#'   
+#' @param ppd For \code{stansurv} objects (\pkg{rstanarm}), \code{ppd} 
+#'   (logical) indicates whether to draw from the posterior predictive 
+#'   distribution before launching the app. The default is \code{TRUE}, 
+#'   although for very large objects it can be convenient to set it to 
+#'   \code{FALSE} as drawing from the posterior predictive distribution can be 
+#'   time consuming. If \code{ppd} is \code{TRUE} then graphical posterior
+#'   predictive checks are available when 'ShinyStan' is launched.
+#' @param seed Passed to \code{\link[rstanarm]{pp_check}} (\pkg{rstanarm}) if 
+#'   \code{ppd} is \code{TRUE}.
+#'   
+#' @examples
+#' \dontrun{
+#' ######################
+#' ### stanreg object ###
+#' ######################
+#' library("rstanarm")
+#' example("example_model")
+#' sso <- as.shinystan(example_model)
+#' launch_shinystan(sso)
+#' }
+#'
+setMethod(
+  "as.shinystan",
+  signature = "stansurv",
+  definition = function(X,
+                        ppd = TRUE,
+                        seed = 1234,
+                        model_name = NULL,
+                        note = NULL,
+                        ...) {
+    check_suggests("rstanarm")
+    sso <- as.shinystan(X$stanfit, ...)
+    
+    mname <- if (!is.null(model_name))
+      model_name else paste0("rstanarm model (", sso@model_name, ")")
+    sso <- suppressMessages(model_name(sso, mname))
+    
+    if (!is.null(note))
+      sso <- suppressMessages(notes(sso, note, replace = TRUE))
+    
+    param_names <- slot(sso, "param_names")
+    sel <- grep(":_NEW_", dimnames(slot(sso, "posterior_sample"))[[3L]], 
+                fixed = TRUE)
+    if (length(sel)) {
+      param_names <- param_names[-sel]
+      slot(sso, "posterior_sample") <- 
+        slot(sso, "posterior_sample")[, , -sel, drop = FALSE]
+      slot(sso, "summary")  <- 
+        slot(sso, "summary")[-sel, , drop = FALSE]
+    }
+    param_dims <- rep(list(numeric(0)), length(param_names))
+    names(param_dims) <- param_names
+    
+    slot(sso, "param_names") <- param_names
+    slot(sso, "param_dims") <- param_dims
+    slot(sso, "misc")[["stanreg"]] <- TRUE
+    if (isTRUE(ppd))
+      slot(sso, "misc")[["pp_check_plots"]] <- .rstanarm_pp_checks(X, seed)
+    
+    return(sso)
+  }
+)
+
+.rstanarm_pp_checks <- function(X, seed, ...) {
+  message(
+    "\nHang on... preparing graphical posterior predictive checks for rstanarm model.",
+    "\nSee help('shinystan', 'rstanarm') for how to disable this feature."
+  )
+  ppc <- rstanarm::pp_check
+  pp_check_plots <- list()
+  
+  pp_check_plots[["pp_check_hist"]] <-
+    do.call("ppc",
+            list(
+              object = X,
+              plotfun = "hist",
+              nreps = 8,
+              seed = seed
+            ))
+  pp_check_plots[["pp_check_dens"]] <-
+    do.call("ppc",
+            list(
+              object = X,
+              plotfun = "dens_overlay",
+              nreps = 50,
+              seed = seed
+            ))
+  pp_check_plots[["pp_check_resid"]] <-
+    do.call("ppc", 
+            list(
+              object = X,
+              plotfun = "error_hist",
+              nreps = 8,
+              seed = seed
+            ))
+  pp_check_plots[["pp_check_scatter"]] <-
+    do.call("ppc",
+            list(
+              object = X,
+              plotfun = "scatter_avg",
+              nreps = NULL,
+              seed = seed
+            ))
+  pp_check_plots[["pp_check_stat_mean"]] <-
+    do.call("ppc",
+            list(
+              object = X,
+              plotfun = "stat",
+              stat = "mean",
+              seed = seed
+            ))
+  pp_check_plots[["pp_check_stat_sd"]] <-
+    do.call("ppc", 
+            list(
+              object = X,
+              plotfun = "stat",
+              stat = "sd",
+              seed = seed
+            ))
+  pp_check_plots[["pp_check_stat_min"]] <-
+    do.call("ppc", 
+            list(
+              object = X,
+              plotfun = "stat",
+              stat = "min",
+              seed = seed
+            ))
+  pp_check_plots[["pp_check_stat_max"]] <-
+    do.call("ppc", 
+            list(
+              object = X,
+              plotfun = "stat",
+              stat = "max",
+              seed = seed
+            ))
+  
+  pp_check_plots
+}
+
+
